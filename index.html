@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Paisaje de Cerezos - Atardecer 3D</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+            text-shadow: 2px 2px 4px #000;
+            pointer-events: none;
+            z-index: 10;
+        }
+        h1 { margin: 0; font-size: 24px; color: #ffb7c5; }
+        p { font-size: 16px; }
+        #counter { font-size: 20px; font-weight: bold; color: #ffd700; }
+        #win-message {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            color: white;
+            border: 2px solid #ffb7c5;
+            z-index: 20;
+        }
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255,255,255,0.7);
+            font-size: 14px;
+            text-align: center;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <h1>🌸 Jardín de Cerezos al Atardecer</h1>
+    <p>Imágenes encontradas: <span id="counter">0</span> / 5</p>
+</div>
+
+<div id="instructions">
+    Click para empezar | W,A,S,D para moverte | Mouse para mirar | Espacio para saltar
+</div>
+
+<div id="win-message">
+    <h2 style="color: #ffb7c5; font-size: 32px;">¡Felicidades! 🎉</h2>
+    <p>Has encontrado las 5 imágenes sagradas.</p>
+    <p>El jardín está completo.</p>
+    <button onclick="location.reload()" style="padding: 10px 20px; margin-top: 20px; cursor: pointer; background: #ffb7c5; border: none; border-radius: 5px; font-weight: bold;">Reiniciar</button>
+</div>
+
+<!-- Importamos Three.js desde CDN -->
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+    import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
+
+    // --- CONFIGURACIÓN BÁSICA ---
+    const scene = new THREE.Scene();
+    // Cielo tipo atardecer (gradiente rosa/naranja)
+    scene.background = new THREE.Color(0xff9966);
+    scene.fog = new THREE.FogExp2(0xff9966, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.y = 1.6; // Altura de los ojos
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    // --- ILUMINACIÓN (Atardecer dramático) ---
+    const hemiLight = new THREE.HemisphereLight(0xffaa00, 0x00ffcc, 0.4);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffaa00, 1.5);
+    dirLight.position.set(-50, 30, -50);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 2048;
+    dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 200;
+    dirLight.shadow.camera.left = -100;
+    dirLight.shadow.camera.right = 100;
+    dirLight.shadow.camera.top = 100;
+    dirLight.shadow.camera.bottom = -100;
+    scene.add(dirLight);
+
+    // --- TERRENO (Generación procedural simple) ---
+    const planeGeometry = new THREE.PlaneGeometry(200, 200, 128, 128);
+    
+    // Elevación simple del terreno
+    const posAttribute = planeGeometry.attributes.position;
+    for (let i = 0; i < posAttribute.count; i++) {
+        const x = posAttribute.getX(i);
+        const y = posAttribute.getY(i);
+        // Crear colinas suaves
+        const z = Math.sin(x * 0.05) * Math.cos(y * 0.05) * 2 + Math.sin(x * 0.1) * 1.5;
+        posAttribute.setZ(i, z);
+    }
+    planeGeometry.computeVertexNormals();
+
+    const planeMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x3b5e2b, // Verde bosque oscuro
+        roughness: 0.8,
+        flatShading: false
+    });
+    const terrain = new THREE.Mesh(planeGeometry, planeMaterial);
+    terrain.rotation.x = -Math.PI / 2;
+    terrain.receiveShadow = true;
+    scene.add(terrain);
+
+    // --- AGUA (Estanque reflectante) ---
+    const waterGeo = new THREE.CircleGeometry(30, 64);
+    const waterMat = new THREE.MeshStandardMaterial({
+        color: 0x44aaff,
+        transparent: true,
+        opacity: 0.6,
+        roughness: 0.1,
+        metalness: 0.8
+    });
+    const water = new THREE.Mesh(waterGeo, waterMat);
+    water.rotation.x = -Math.PI / 2;
+    water.position.set(20, 0.1, 20); // Posición del estanque
+    scene.add(water);
+
+    // --- GENERADOR DE ÁRBOLES DE CEREZO ---
+    function createCherryBlossomTree(x, z, scale = 1) {
+        const treeGroup = new THREE.Group();
+
+        // Tronco
+        const trunkGeo = new THREE.CylinderGeometry(0.2 * scale, 0.4 * scale, 3 * scale, 8);
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3c31 });
+        const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+        trunk.position.y = 1.5 * scale;
+        trunk.castShadow = true;
+        treeGroup.add(trunk);
+
+        // Ramas principales (simples)
+        const branchGeo = new THREE.CylinderGeometry(0.1 * scale, 0.2 * scale, 2 * scale, 6);
+        for(let i=0; i<4; i++) {
+            const branch = new THREE.Mesh(branchGeo, trunkMat);
+            branch.position.y = 2.5 * scale;
+            branch.rotation.z = (Math.random() - 0.5) * 1.5;
+            branch.rotation.x = (Math.random() - 0.5) * 1.5;
+            branch.rotation.y = Math.random() * Math.PI * 2;
+            branch.castShadow = true;
+            treeGroup.add(branch);
+        }
+
+        // Copa de flores (Partículas/Esfereas rosas)
+        const leavesCount = 150;
+        const leavesGeo = new THREE.DodecahedronGeometry(0.15 * scale, 0);
+        const leavesMat = new THREE.MeshStandardMaterial({ 
+            color: 0xffb7c5, // Rosa cerezo
+            emissive: 0xff69b4,
+            emissiveIntensity: 0.2
+        });
+
+        const leavesInstanced = new THREE.InstancedMesh(leavesGeo, leavesMat, leavesCount);
+        const dummy = new THREE.Object3D();
+        
+        for (let i = 0; i < leavesCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = Math.random() * 2.5 * scale;
+            const height = Math.random() * 1.5 * scale;
+            
+            dummy.position.set(
+                Math.cos(angle) * radius,
+                3 * scale + height,
+                Math.sin(angle) * radius
+            );
+            dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+            dummy.scale.setScalar(Math.random() * 0.5 + 0.5);
+            dummy.updateMatrix();
+            leavesInstanced.setMatrixAt(i, dummy.matrix);
+        }
+        
+        leavesInstanced.castShadow = true;
+        treeGroup.add(leavesInstanced);
+
+        treeGroup.position.set(x, 0, z);
+        scene.add(treeGroup);
+    }
+
+    // Plantar muchos árboles
+    for (let i = 0; i < 60; i++) {
+        const x = (Math.random() - 0.5) * 180;
+        const z = (Math.random() - 0.5) * 180;
+        
+        // Evitar poner árboles en el estanque
+        const distToPond = Math.sqrt((x-20)**2 + (z-20)**2);
+        if (distToPond > 35) {
+            const scale = 0.8 + Math.random() * 0.6;
+            createCherryBlossomTree(x, z, scale);
+        }
+    }
+
+    // --- PÉTALOS CAYENDO (Sistema de partículas) ---
+    const petalsCount = 2000;
+    const petalGeo = new THREE.PlaneGeometry(0.1, 0.1);
+    const petalMat = new THREE.MeshBasicMaterial({ 
+        color: 0xffb7c5, 
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.8
+    });
+    const petals = new THREE.InstancedMesh(petalGeo, petalMat, petalsCount);
+    const petalData = [];
+
+    for(let i=0; i<petalsCount; i++) {
+        petalData.push({
+            x: (Math.random() - 0.5) * 200,
+            y: Math.random() * 20,
+            z: (Math.random() - 0.5) * 200,
+            speed: 0.02 + Math.random() * 0.05,
+            sway: Math.random() * 0.05,
+            timeOffset: Math.random() * 100
+        });
+    }
+    scene.add(petals);
+
+    // --- OBJETIVOS (Las 5 imágenes) ---
+    const imagesFound = new Set();
+    const totalImages = 5;
+    const imagePositions = [
+        { x: 0, z: 0 },    // Centro
+        { x: -40, z: -40 },
+        { x: 40, z: -40 },
+        { x: -40, z: 40 },
+        { x: 40, z: 40 }
+    ];
+
+    const pedestals = [];
+
+    imagePositions.forEach((pos, index) => {
+        // Pedestal
+        const pedGeo = new THREE.BoxGeometry(1, 1.5, 1);
+        const pedMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.2 });
+        const pedestal = new THREE.Mesh(pedGeo, pedMat);
+        pedestal.position.set(pos.x, 0.75, pos.z);
+        pedestal.castShadow = true;
+        pedestal.receiveShadow = true;
+        scene.add(pedestal);
+
+        // Marco de imagen (Plano brillante)
+        const frameGeo = new THREE.BoxGeometry(0.8, 0.6, 0.1);
+        const frameMat = new THREE.MeshStandardMaterial({ 
+            color: 0xffd700, // Dorado
+            emissive: 0xaa6600,
+            emissiveIntensity: 0.5
+        });
+        const frame = new THREE.Mesh(frameGeo, frameMat);
+        frame.position.set(pos.x, 1.5, pos.z);
+        
+        // Luz puntual sobre cada imagen
+        const pointLight = new THREE.PointLight(0xffaa00, 1, 10);
+        pointLight.position.set(pos.x, 2.5, pos.z);
+        scene.add(pointLight);
+
+        scene.add(frame);
+        pedestals.push({ mesh: frame, id: index, active: true, baseY: 1.5 });
+    });
+
+    // --- CONTROLES (Primera Persona) ---
+    const controls = new PointerLockControls(camera, document.body);
+    const instructions = document.getElementById('instructions');
+
+    document.addEventListener('click', () => {
+        controls.lock();
+    });
+
+    controls.addEventListener('lock', () => {
+        instructions.style.display = 'none';
+    });
+
+    controls.addEventListener('unlock', () => {
+        instructions.style.display = 'block';
+    });
+
+    // Movimiento
+    let moveForward = false;
+    let moveBackward = false;
+    let moveLeft = false;
+    let moveRight = false;
+    let canJump = false;
+
+    const velocity = new THREE.Vector3();
+    const direction = new THREE.Vector3();
+
+    const onKeyDown = function (event) {
+        switch (event.code) {
+            case 'ArrowUp':
+            case 'KeyW': moveForward = true; break;
+            case 'ArrowLeft':
+            case 'KeyA': moveLeft = true; break;
+            case 'ArrowDown':
+            case 'KeyS': moveBackward = true; break;
+            case 'ArrowRight':
+            case 'KeyD': moveRight = true; break;
+            case 'Space': if (canJump === true) velocity.y += 15; canJump = false; break;
+        }
+    };
+
+    const onKeyUp = function (event) {
+        switch (event.code) {
+            case 'ArrowUp':
+            case 'KeyW': moveForward = false; break;
+            case 'ArrowLeft':
+            case 'KeyA': moveLeft = false; break;
+            case 'ArrowDown':
+            case 'KeyS': moveBackward = false; break;
+            case 'ArrowRight':
+            case 'KeyD': moveRight = false; break;
+        }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+
+    // --- BUCLE DE ANIMACIÓN ---
+    let prevTime = performance.now();
+    const counterElement = document.getElementById('counter');
+    const winMessage = document.getElementById('win-message');
+
+    function animate() {
+        requestAnimationFrame(animate);
+
+        const time = performance.now();
+        const delta = (time - prevTime) / 1000;
+
+        // Física de movimiento
+        if (controls.isLocked === true) {
+            velocity.x -= velocity.x * 10.0 * delta;
+            velocity.z -= velocity.z * 10.0 * delta;
+            velocity.y -= 9.8 * 10.0 * delta; // Gravedad
+
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.normalize();
+
+            if (moveForward || moveBackward) velocity.z -= direction.z * 100.0 * delta;
+            if (moveLeft || moveRight) velocity.x -= direction.x * 100.0 * delta;
+
+            controls.moveRight(-velocity.x * delta);
+            controls.moveForward(-velocity.z * delta);
+            camera.position.y += velocity.y * delta;
+
+            // Colisión con el suelo (simple)
+            if (camera.position.y < 1.6) {
+                velocity.y = 0;
+                camera.position.y = 1.6;
+                canJump = true;
+            }
+        }
+
+        // Animación de pétalos
+        const dummy = new THREE.Object3D();
+        for(let i=0; i<petalsCount; i++) {
+            const data = petalData[i];
+            data.y -= data.speed;
+            data.x += Math.sin(time * 0.001 + data.timeOffset) * 0.05;
+            data.z += Math.cos(time * 0.001 + data.timeOffset) * 0.05;
+
+            if(data.y < 0) data.y = 20; // Resetear arriba
+
+            dummy.position.set(data.x, data.y, data.z);
+            dummy.rotation.set(0, time * 0.001, 0);
+            dummy.updateMatrix();
+            petals.setMatrixAt(i, dummy.matrix);
+        }
+        petals.instanceMatrix.needsUpdate = true;
+
+        // Animación de imágenes (flotar)
+        pedestals.forEach(p => {
+            if(p.active) {
+                p.mesh.position.y = p.baseY + Math.sin(time * 0.003 + p.id) * 0.2;
+                p.mesh.rotation.y += 0.01;
+                
+                // Detección de colección
+                const dist = camera.position.distanceTo(p.mesh.position);
+                if(dist < 3) {
+                    p.active = false;
+                    p.mesh.visible = false;
+                    imagesFound.add(p.id);
+                    counterElement.innerText = imagesFound.size;
+                    
+                    if(imagesFound.size === totalImages) {
+                        controls.unlock();
+                        winMessage.style.display = 'block';
+                    }
+                }
+            }
+        });
+
+        prevTime = time;
+        renderer.render(scene, camera);
+    }
+
+    // Ajustar ventana
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+</script>
+</body>
+</html>

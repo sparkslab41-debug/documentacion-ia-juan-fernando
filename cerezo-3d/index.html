@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paisaje de Cerezos al Atardecer - Museo Interactivo 3D</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000;
+        }
+        
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        
+        #ui-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            z-index: 100;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            pointer-events: none;
+        }
+        
+        #counter {
+            font-size: 24px;
+            font-weight: bold;
+            background: rgba(0,0,0,0.6);
+            padding: 15px 25px;
+            border-radius: 10px;
+            border: 2px solid #ffb7c5;
+            backdrop-filter: blur(10px);
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0,0,0,0.6);
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+            pointer-events: none;
+        }
+        
+        #victory-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            background: linear-gradient(135deg, rgba(255,183,197,0.9), rgba(255,105,180,0.9));
+            padding: 40px 60px;
+            border-radius: 20px;
+            text-align: center;
+            display: none;
+            z-index: 200;
+            box-shadow: 0 10px 40px rgba(255,105,180,0.5);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.05); }
+        }
+        
+        #victory-message h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        #victory-message p {
+            font-size: 20px;
+        }
+        
+        .collected-images {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+        
+        .image-slot {
+            width: 60px;
+            height: 60px;
+            background: rgba(0,0,0,0.6);
+            border: 2px solid #ffb7c5;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        
+        .image-slot.collected {
+            border-color: #ff69b4;
+            box-shadow: 0 0 15px rgba(255,105,180,0.6);
+        }
+        
+        .image-slot img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .image-slot.empty {
+            color: rgba(255,255,255,0.3);
+            font-size: 24px;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            z-index: 300;
+            text-align: center;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255,183,197,0.3);
+            border-top: 4px solid #ffb7c5;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div id="ui-overlay">
+        <div id="counter">🌸 Imágenes encontradas: <span id="count">0</span>/5</div>
+    </div>
+    
+    <div class="collected-images" id="collected-images">
+        <div class="image-slot empty" id="slot-1">?</div>
+        <div class="image-slot empty" id="slot-2">?</div>
+        <div class="image-slot empty" id="slot-3">?</div>
+        <div class="image-slot empty" id="slot-4">?</div>
+        <div class="image-slot empty" id="slot-5">?</div>
+    </div>
+    
+    <div id="instructions">
+        <strong>Controles:</strong><br>
+        🖱️ Click para activar<br>
+        W,A,S,D - Moverse<br>
+        Mouse - Mirar alrededor<br>
+        Espacio - Saltar<br>
+        Shift - Correr
+    </div>
+    
+    <div id="victory-message">
+        <h1>🎉 ¡Felicidades! 🎉</h1>
+        <p>¡Has encontrado todas las imágenes del museo!</p>
+        <p style="margin-top: 20px; font-size: 16px;">Disfruta del hermoso paisaje de cerezos al atardecer</p>
+    </div>
+    
+    <div id="loading">
+        <div class="spinner"></div>
+        <div>Cargando el paisaje de cerezos...</div>
+        <div style="font-size: 16px; margin-top: 10px; opacity: 0.7;">Esto puede tomar unos segundos</div>
+    </div>
+
+    <!-- Three.js desde CDN -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        import { Sky } from 'three/addons/objects/Sky.js';
+
+        // Variables globales
+        let camera, scene, renderer, controls;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let canJump = false, isRunning = false;
+        let prevTime = performance.now();
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        let collectedImages = new Set();
+        const totalImages = 5;
+
+        // Elementos del DOM
+        const loadingScreen = document.getElementById('loading');
+        const countDisplay = document.getElementById('count');
+        const victoryMessage = document.getElementById('victory-message');
+
+        // Inicializar la escena
+        init();
+        animate();
+
+        function init() {
+            // Escena
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0xffaa88, 0.008);
+
+            // Cámara
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 2, 10);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // Controles
+            controls = new PointerLockControls(camera, document.body);
+
+            const canvas = renderer.domElement;
+            canvas.addEventListener('click', () => {
+                controls.lock();
+            });
+
+            controls.addEventListener('lock', () => {
+                // Controls activados
+            });
+
+            controls.addEventListener('unlock', () => {
+                // Controls desactivados
+            });
+
+            scene.add(controls.getObject());
+
+            // Eventos de teclado
+            const onKeyDown = (event) => {
+                switch (event.code) {
+                    case 'ArrowUp':
+                    case 'KeyW': moveForward = true; break;
+                    case 'ArrowLeft':
+                    case 'KeyA': moveLeft = true; break;
+                    case 'ArrowDown':
+                    case 'KeyS': moveBackward = true; break;
+                    case 'ArrowRight':
+                    case 'KeyD': moveRight = true; break;
+                    case 'Space': if (canJump === true) velocity.y += 15; canJump = false; break;
+                    case 'ShiftLeft': isRunning = true; break;
+                }
+            };
+
+            const onKeyUp = (event) => {
+                switch (event.code) {
+                    case 'ArrowUp':
+                    case 'KeyW': moveForward = false; break;
+                    case 'ArrowLeft':
+                    case 'KeyA': moveLeft = false; break;
+                    case 'ArrowDown':
+                    case 'KeyS': moveBackward = false; break;
+                    case 'ArrowRight':
+                    case 'KeyD': moveRight = false; break;
+                    case 'ShiftLeft': isRunning = false; break;
+                }
+            };
+
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+
+            // Crear el cielo/atmósfera de atardecer
+            createSky();
+
+            // Crear iluminación
+            createLighting();
+
+            // Crear terreno
+            createTerrain();
+
+            // Crear árboles de cerezo
+            createCherryTrees();
+
+            // Crear pétalos cayendo
+            createFallingPetals();
+
+            // Crear imágenes/coleccionables
+            createCollectibles();
+
+            // Crear sendero
+            createPath();
+
+            // Crear estanque
+            createPond();
+
+            // Event listener para redimensionar
+            window.addEventListener('resize', onWindowResize);
+
+            // Ocultar pantalla de carga después de un tiempo
+            setTimeout(() => {
+                loadingScreen.style.display = 'none';
+            }, 3000);
+        }
+
+        function createSky() {
+            const sky = new Sky();
+            sky.scale.setScalar(450000);
+            scene.add(sky);
+
+            const sun = new THREE.Vector3();
+            
+            // Configuración de atardecer
+            const effectController = {
+                turbidity: 10,
+                rayleigh: 3,
+                mieCoefficient: 0.005,
+                mieDirectionalG: 0.7,
+                elevation: 15, // Bajo para atardecer
+                azimuth: 180
+            };
+
+            const uniforms = sky.uniforms;
+            uniforms['turbidity'].value = effectController.turbidity;
+            uniforms['rayleigh'].value = effectController.rayleigh;
+            uniforms['mieCoefficient'].value = effectController.mieCoefficient;
+            uniforms['mieDirectionalG'].value = effectController.mieDirectionalG;
+
+            const phi = THREE.MathUtils.degToRad(90 - effectController.elevation);
+            const theta = THREE.MathUtils.degToRad(effectController.azimuth);
+            sun.setFromSphericalCoords(1, phi, theta);
+            uniforms['sunPosition'].value.copy(sun);
+
+            // Color del cielo de atardecer
+            scene.background = new THREE.Color(0xff6b6b);
+            scene.background.lerp(new THREE.Color(0xffa07a), 0.5);
+        }
+
+        function createLighting() {
+            // Luz ambiental cálida
+            const ambientLight = new THREE.AmbientLight(0xffaa88, 0.6);
+            scene.add(ambientLight);
+
+            // Luz direccional (sol)
+            const directionalLight = new THREE.DirectionalLight(0xff6347, 1.5);
+            directionalLight.position.set(50, 30, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 500;
+            directionalLight.shadow.camera.left = -100;
+            directionalLight.shadow.camera.right = 100;
+            directionalLight.shadow.camera.top = 100;
+            directionalLight.shadow.camera.bottom = -100;
+            scene.add(directionalLight);
+
+            // Luces puntuales para ambiente
+            const pointLight1 = new THREE.PointLight(0xff69b4, 0.5, 50);
+            pointLight1.position.set(20, 5, 20);
+            scene.add(pointLight1);
+
+            const pointLight2 = new THREE.PointLight(0xffb6c1, 0.5, 50);
+            pointLight2.position.set(-20, 5, -20);
+            scene.add(pointLight2);
+
+            // Luz de luna suave
+            const moonLight = new THREE.DirectionalLight(0x6666ff, 0.3);
+            moonLight.position.set(-50, 40, -50);
+            scene.add(moonLight);
+        }
+
+        function createTerrain() {
+            // Terreno principal con hierba
+            const terrainGeometry = new THREE.PlaneGeometry(500, 500, 100, 100);
+            
+            // Añadir variación al terreno
+            const vertices = terrainGeometry.attributes.position.array;
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = vertices[i];
+                const y = vertices[i + 1];
+                // Suave variación en el terreno
+                vertices[i + 2] = Math.sin(x * 0.05) * Math.cos(y * 0.05) * 2 + 
+                                 Math.sin(x * 0.1 + y * 0.1) * 1;
+            }
+            terrainGeometry.computeVertexNormals();
+
+            const terrainMaterial = new THREE.MeshStandardMaterial({
+                color: 0x2d5016,
+                roughness: 0.8,
+                metalness: 0.1,
+                side: THREE.DoubleSide
+            });
+
+            const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
+            terrain.rotation.x = -Math.PI / 2;
+            terrain.receiveShadow = true;
+            scene.add(terrain);
+
+            // Capa de flores/rosas en el suelo
+            createGroundFlowers();
+        }
+
+        function createGroundFlowers() {
+            const flowerGeometry = new THREE.CircleGeometry(0.15, 8);
+            const flowerMaterials = [
+                new THREE.MeshBasicMaterial({ color: 0xffb6c1 }),
+                new THREE.MeshBasicMaterial({ color: 0xff69b4 }),
+                new THREE.MeshBasicMaterial({ color: 0xffffff }),
+                new THREE.MeshBasicMaterial({ color: 0xff1493 })
+            ];
+
+            for (let i = 0; i < 2000; i++) {
+                const material = flowerMaterials[Math.floor(Math.random() * flowerMaterials.length)];
+                const flower = new THREE.Mesh(flowerGeometry, material);
+                
+                const x = (Math.random() - 0.5) * 400;
+                const z = (Math.random() - 0.5) * 400;
+                
+                flower.position.set(x, 0.05, z);
+                flower.rotation.x = -Math.PI / 2;
+                flower.rotation.z = Math.random() * Math.PI;
+                
+                scene.add(flower);
+            }
+        }
+
+        function createCherryTrees() {
+            // Crear múltiples árboles de cerezo
+            const treePositions = [
+                { x: 0, z: -30 },
+                { x: 25, z: -20 },
+                { x: -25, z: -25 },
+                { x: 35, z: 10 },
+                { x: -35, z: 15 },
+                { x: 15, z: 35 },
+                { x: -15, z: 35 },
+                { x: 45, z: -10 },
+                { x: -45, z: -5 },
+                { x: 30, z: 40 },
+                { x: -30, z: 40 },
+                { x: 50, z: 25 },
+                { x: -50, z: 25 },
+                { x: 20, z: -50 },
+                { x: -20, z: -50 }
+            ];
+
+            treePositions.forEach(pos => {
+                createCherryTree(pos.x, pos.z);
+            });
+        }
+
+        function createCherryTree(x, z) {
+            const treeGroup = new THREE.Group();
+
+            // Tronco
+            const trunkGeometry = new THREE.CylinderGeometry(0.3, 0.5, 4, 8);
+            const trunkMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a3728,
+                roughness: 0.9
+            });
+            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+            trunk.castShadow = true;
+            treeGroup.add(trunk);
+
+            // Ramas principales
+            for (let i = 0; i < 5; i++) {
+                const angle = (i / 5) * Math.PI * 2;
+                const branchLength = 2 + Math.random();
+                const branchGeometry = new THREE.CylinderGeometry(0.1, 0.2, branchLength, 6);
+                const branch = new THREE.Mesh(branchGeometry, trunkMaterial);
+                
+                branch.position.set(
+                    Math.cos(angle) * 0.5,
+                    3 + Math.random() * 0.5,
+                    Math.sin(angle) * 0.5
+                );
+                branch.rotation.z = -Math.PI / 4;
+                branch.rotation.y = -angle;
+                branch.castShadow = true;
+                treeGroup.add(branch);
+            }
+
+            // Copa del árbol (flores de cerezo)
+            const foliageCount = 15;
+            for (let i = 0; i < foliageCount; i++) {
+                const size = 0.8 + Math.random() * 0.6;
+                const foliageGeometry = new THREE.SphereGeometry(size, 8, 8);
+                
+                // Variación de colores rosados
+                const colors = [0xffb7c5, 0xff69b4, 0xffc0cb, 0xff1493, 0xffb6c1];
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                
+                const foliageMaterial = new THREE.MeshStandardMaterial({
+                    color: color,
+                    transparent: true,
+                    opacity: 0.9,
+                    roughness: 0.6
+                });
+                
+                const foliage = new THREE.Mesh(foliageGeometry, foliageMaterial);
+                
+                // Posicionar en la copa del árbol
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 1 + Math.random() * 2.5;
+                const height = 3.5 + Math.random() * 1.5;
+                
+                foliage.position.set(
+                    Math.cos(angle) * radius,
+                    height,
+                    Math.sin(angle) * radius
+                );
+                
+                foliage.castShadow = true;
+                foliage.receiveShadow = true;
+                treeGroup.add(foliage);
+            }
+
+            treeGroup.position.set(x, 0, z);
+            scene.add(treeGroup);
+        }
+
+        function createFallingPetals() {
+            const petalGeometry = new THREE.CircleGeometry(0.08, 6);
+            const petalMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffb7c5,
+                transparent: true,
+                opacity: 0.8,
+                side: THREE.DoubleSide
+            });
+
+            // Crear sistema de partículas para pétalos
+            const petalCount = 500;
+            const petals = [];
+
+            for (let i = 0; i < petalCount; i++) {
+                const petal = new THREE.Mesh(petalGeometry, petalMaterial.clone());
+                
+                petal.position.set(
+                    (Math.random() - 0.5) * 100,
+                    Math.random() * 30,
+                    (Math.random() - 0.5) * 100
+                );
+                
+                petal.userData = {
+                    velocityY: -0.02 - Math.random() * 0.03,
+                    velocityX: (Math.random() - 0.5) * 0.02,
+                    velocityZ: (Math.random() - 0.5) * 0.02,
+                    rotationSpeed: Math.random() * 0.05
+                };
+                
+                petal.rotation.x = Math.random() * Math.PI;
+                petal.rotation.z = Math.random() * Math.PI;
+                
+                scene.add(petal);
+                petals.push(petal);
+            }
+
+            // Animar pétalos
+            function animatePetals() {
+                petals.forEach(petal => {
+                    petal.position.y += petal.userData.velocityY;
+                    petal.position.x += petal.userData.velocityX + Math.sin(Date.now() * 0.001 + petal.position.x) * 0.01;
+                    petal.position.z += petal.userData.velocityZ;
+                    
+                    petal.rotation.x += petal.userData.rotationSpeed;
+                    petal.rotation.z += petal.userData.rotationSpeed;
+                    
+                    // Resetear si cae al suelo
+                    if (petal.position.y < 0) {
+                        petal.position.y = 30;
+                        petal.position.x = (Math.random() - 0.5) * 100;
+                        petal.position.z = (Math.random() - 0.5) * 100;
+                    }
+                });
+                
+                requestAnimationFrame(animatePetals);
+            }
+            
+            animatePetals();
+        }
+
+        function createCollectibles() {
+            // Posiciones para las 5 imágenes
+            const positions = [
+                { x: 10, z: -15, label: "1" },
+                { x: -12, z: 20, label: "2" },
+                { x: 25, z: 5, label: "3" },
+                { x: -20, z: -10, label: "4" },
+                { x: 5, z: 30, label: "5" }
+            ];
+
+            positions.forEach((pos, index) => {
+                createCollectible(pos.x, pos.z, index + 1);
+            });
+        }
+
+        function createCollectible(x, z, id) {
+            const group = new THREE.Group();
+
+            // Pedestal
+            const pedestalGeometry = new THREE.CylinderGeometry(0.4, 0.5, 1.5, 16);
+            const pedestalMaterial = new THREE.MeshStandardMaterial({
+                color: 0x8b4513,
+                roughness: 0.7,
+                metalness: 0.3
+            });
+            const pedestal = new THREE.Mesh(pedestalGeometry, pedestalMaterial);
+            pedestal.castShadow = true;
+            pedestal.receiveShadow = true;
+            group.add(pedestal);
+
+            // Marco para la imagen
+            const frameGeometry = new THREE.BoxGeometry(1.2, 0.9, 0.1);
+            const frameMaterial = new THREE.MeshStandardMaterial({
+                color: 0xd4af37,
+                roughness: 0.3,
+                metalness: 0.8
+            });
+            const frame = new THREE.Mesh(frameGeometry, frameMaterial);
+            frame.position.y = 1.2;
+            frame.castShadow = true;
+            group.add(frame);
+
+            // Imagen (plano con textura)
+            const imageGeometry = new THREE.PlaneGeometry(1, 0.75);
+            
+            // Cargar textura desde archivo local
+            const textureLoader = new THREE.TextureLoader();
+            const texture = textureLoader.load(`images/${id}.png`);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            
+            const imageMaterial = new THREE.MeshBasicMaterial({
+                map: texture,
+                side: THREE.DoubleSide
+            });
+            const imagePlane = new THREE.Mesh(imageGeometry, imageMaterial);
+            imagePlane.position.y = 1.2;
+            imagePlane.position.z = 0.06;
+            group.add(imagePlane);
+
+            // Luz puntual para resaltar
+            const light = new THREE.PointLight(0xff69b4, 1, 10);
+            light.position.set(0, 2.5, 1);
+            group.add(light);
+
+            // Partículas brillantes alrededor
+            const particleCount = 20;
+            const particleGeometry = new THREE.SphereGeometry(0.05, 8, 8);
+            const particleMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffd700,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            for (let i = 0; i < particleCount; i++) {
+                const particle = new THREE.Mesh(particleGeometry, particleMaterial.clone());
+                const angle = (i / particleCount) * Math.PI * 2;
+                const radius = 1.5;
+                
+                particle.position.set(
+                    Math.cos(angle) * radius,
+                    1 + Math.random(),
+                    Math.sin(angle) * radius
+                );
+                
+                particle.userData = {
+                    baseAngle: angle,
+                    speed: 0.02 + Math.random() * 0.02,
+                    yOffset: Math.random() * 0.5
+                };
+                
+                group.add(particle);
+            }
+
+            group.position.set(x, 0, z);
+            group.userData = { id: id, collected: false, particles: group.children.filter(c => c.geometry && c.geometry.type === 'SphereGeometry') };
+            
+            // Animar partículas
+            function animateParticles() {
+                if (!group.userData.collected) {
+                    group.userData.particles.forEach(particle => {
+                        particle.userData.baseAngle += particle.userData.speed;
+                        particle.position.x = Math.cos(particle.userData.baseAngle) * 1.5;
+                        particle.position.z = Math.sin(particle.userData.baseAngle) * 1.5;
+                        particle.position.y = 1 + particle.userData.yOffset + Math.sin(Date.now() * 0.003 + particle.userData.baseAngle) * 0.3;
+                    });
+                }
+                requestAnimationFrame(animateParticles);
+            }
+            animateParticles();
+
+            scene.add(group);
+        }
+
+        function createPath() {
+            // Sendero de piedras
+            const pathGeometry = new THREE.PlaneGeometry(4, 80);
+            const pathMaterial = new THREE.MeshStandardMaterial({
+                color: 0x8b7355,
+                roughness: 0.9
+            });
+            const path = new THREE.Mesh(pathGeometry, pathMaterial);
+            path.rotation.x = -Math.PI / 2;
+            path.position.y = 0.02;
+            path.receiveShadow = true;
+            scene.add(path);
+
+            // Piedras decorativas a lo largo del sendero
+            for (let i = 0; i < 40; i++) {
+                const stoneSize = 0.3 + Math.random() * 0.4;
+                const stoneGeometry = new THREE.DodecahedronGeometry(stoneSize, 0);
+                const stoneMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x696969,
+                    roughness: 0.8
+                });
+                const stone = new THREE.Mesh(stoneGeometry, stoneMaterial);
+                
+                const offset = (Math.random() - 0.5) * 6;
+                const zPos = -40 + i * 2;
+                
+                stone.position.set(offset, stoneSize * 0.5, zPos);
+                stone.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+                stone.castShadow = true;
+                
+                scene.add(stone);
+            }
+        }
+
+        function createPond() {
+            // Estanque reflectante
+            const pondGeometry = new THREE.CircleGeometry(15, 32);
+            const pondMaterial = new THREE.MeshStandardMaterial({
+                color: 0x4a90a4,
+                roughness: 0.1,
+                metalness: 0.8,
+                transparent: true,
+                opacity: 0.8
+            });
+            const pond = new THREE.Mesh(pondGeometry, pondMaterial);
+            pond.rotation.x = -Math.PI / 2;
+            pond.position.set(-30, 0.01, 25);
+            pond.receiveShadow = true;
+            scene.add(pond);
+
+            // Nenúfares
+            for (let i = 0; i < 15; i++) {
+                const lilyGeometry = new THREE.CircleGeometry(0.8, 8);
+                const lilyMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x228b22,
+                    roughness: 0.6
+                });
+                const lily = new THREE.Mesh(lilyGeometry, lilyMaterial);
+                
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.random() * 12;
+                
+                lily.rotation.x = -Math.PI / 2;
+                lily.position.set(
+                    -30 + Math.cos(angle) * radius,
+                    0.02,
+                    25 + Math.sin(angle) * radius
+                );
+                
+                scene.add(lily);
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function collectImage(id) {
+            if (!collectedImages.has(id)) {
+                collectedImages.add(id);
+                countDisplay.textContent = collectedImages.size;
+                
+                // Actualizar slot correspondiente
+                const slot = document.getElementById(`slot-${id}`);
+                slot.classList.remove('empty');
+                slot.classList.add('collected');
+                slot.innerHTML = `<img src="images/${id}.png" alt="Imagen ${id}">`;
+                
+                // Verificar victoria
+                if (collectedImages.size === totalImages) {
+                    setTimeout(() => {
+                        victoryMessage.style.display = 'block';
+                    }, 500);
+                }
+            }
+        }
+
+        function checkCollisions() {
+            const playerPos = camera.position;
+            
+            // Verificar colisión con cada coleccionable
+            scene.traverse((object) => {
+                if (object.userData && object.userData.id && !object.userData.collected) {
+                    const distance = playerPos.distanceTo(object.position);
+                    
+                    if (distance < 3) {
+                        object.userData.collected = true;
+                        collectImage(object.userData.id);
+                        
+                        // Efecto visual de colección
+                        const flashGeometry = new THREE.SphereGeometry(2, 16, 16);
+                        const flashMaterial = new THREE.MeshBasicMaterial({
+                            color: 0xffd700,
+                            transparent: true,
+                            opacity: 1
+                        });
+                        const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+                        flash.position.copy(object.position);
+                        flash.position.y = 1;
+                        scene.add(flash);
+                        
+                        // Animar desaparición
+                        let opacity = 1;
+                        const fadeOut = setInterval(() => {
+                            opacity -= 0.05;
+                            flashMaterial.opacity = opacity;
+                            flash.scale.multiplyScalar(1.1);
+                            
+                            if (opacity <= 0) {
+                                clearInterval(fadeOut);
+                                scene.remove(flash);
+                            }
+                        }, 50);
+                    }
+                }
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+
+            if (controls.isLocked === true) {
+                // Fricción
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+                velocity.y -= 9.8 * 30.0 * delta; // Gravedad
+
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize();
+
+                const speed = isRunning ? 120.0 : 60.0;
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * speed * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * speed * delta;
+
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+                camera.position.y += velocity.y * delta;
+
+                // Colisión con el suelo
+                if (camera.position.y < 2) {
+                    velocity.y = 0;
+                    camera.position.y = 2;
+                    canJump = true;
+                }
+
+                // Límites del mundo
+                camera.position.x = Math.max(-200, Math.min(200, camera.position.x));
+                camera.position.z = Math.max(-200, Math.min(200, camera.position.z));
+
+                // Verificar colisiones con coleccionables
+                checkCollisions();
+            }
+
+            prevTime = time;
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
